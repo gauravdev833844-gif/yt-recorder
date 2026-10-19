@@ -1,0 +1,74 @@
+name: Live Stream Recorder (Main 20 Channels)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        streamer:
+          # Aapke Zaroori Priority Channels:
+          - { name: "Apka-aashu", handle: "@Apka-aashu", id: "UCGFi8l9sf5ab4hVJf7byBZg" }
+          - { name: "baskarfiroz15", handle: "@baskarfiroz15", id: "UCSuA9LrSsE4-GSaSYDUZhNw" }
+          - { name: "arhansid786", handle: "@arhansid786", id: "UC1IW16v1OZaVccL5lmc7Qgw" }
+          - { name: "prankurv123", handle: "@prankurv123", id: "UCYe2VVWgjUoEEn9LaLSCk9w" }
+          - { name: "anshhhlive_1", handle: "@anshhhlive_1", id: "UC3NiNPo4kJYnYYhV_6ZnUGw" }
+          - { name: "rishnaaa4u", handle: "@rishnaaa4u", id: "UCsda8YnhZU-aabHGLZcCIfw" }
+          - { name: "HarshxTashu", handle: "@HarshxTashu", id: "UCIvzNxn_8Avi35lki-idQHg" }
+          - { name: "BagadBillagang", handle: "@BagadBillagang-p6s", id: "UC6_0vYIN2dy3MvBuUSvtZJg" }
+          - { name: "U-aashu", handle: "@U-aashu", id: "UCTtKMtz7ww1TOSp1T89adwg" }
+          # Baaki Top 11 Channels:
+          - { name: "heyb7", handle: "@_heyb7", id: "UCiFH1EwIHWmPayYRuDGOHPA" }
+          - { name: "Heyb7-2", handle: "@Heyb7-2.0", id: "UCKrXlieQcrc4POpG796y18A" }
+          - { name: "anuragpratap7633", handle: "@anuragpratap7633", id: "UCMMSseLajKweHbkONabSIDw" }
+          - { name: "bekalki", handle: "@bekalki", id: "UC-JQRYHht4tLKpiChum6GnA" }
+          - { name: "brevislive", handle: "@brevislive", id: "UCnamV2ZKwEAVuWlX3M-IpGg" }
+          - { name: "deepakdaku01", handle: "@deepakdaku01", id: "UCZ8urRqnOwgMUhpNrWthNkg" }
+          - { name: "FLOXILIVE", handle: "@FLOXILIVE", id: "UCZJ4A6LKgprkTntSH3NXl5g" }
+          - { name: "GauravSingh014", handle: "@GauravSingh014", id: "UC_lzbwXHhYLhwRqgeFcQMVQ" }
+          - { name: "GOREDOXLIVE", handle: "@GOREDOXLIVE", id: "UC8MRu8goXUOM-_YaGsUvsmQ" }
+          - { name: "JadLikOG", handle: "@JadLikOG", id: "UC21xx9PwlMSekjs0-Ec21SA" }
+          - { name: "LordKaosLive", handle: "@LordKaosLive", id: "UCXko2yIdrU5G9Mr_VSTFPKQ" }
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Load Cookies (Optional)
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+        run: |
+          if [ -n "$YT_COOKIES" ]; then
+            echo "$YT_COOKIES" > cookies.txt
+          fi
+
+      - name: Run Recorder
+        env:
+          CHANNEL_HANDLE: ${{ matrix.streamer.handle }}
+          TARGET_CHANNEL_ID: ${{ matrix.streamer.id }}
+          HOURS: "5.5"
+          OUT_DIR: "./streams"
+          USE_COOKIES: ${{ secrets.YT_COOKIES != '' && 'true' || 'false' }}
+          COOKIE_FILE: "cookies.txt"
+        run: |
+          python3 recorder.py
+
+      - name: Upload Recorded Video & Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recording-${{ matrix.streamer.name }}
+          path: |
+            ./streams/*.ts
+            ./streams/*.log
+            ./streams/*.json
+          retention-days: 3
