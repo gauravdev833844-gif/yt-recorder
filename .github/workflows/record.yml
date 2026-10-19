@@ -1,4 +1,4 @@
-name: Live Stream Recorder (Exact 20 Channels)
+name: Live Stream Recorder
 
 on:
   workflow_dispatch:
@@ -11,26 +11,66 @@ jobs:
       fail-fast: false
       matrix:
         streamer:
-          - { name: "anshhhlive_1", handle: "@anshhhlive_1", id: "UC3NiNPo4kJYnYYhV_6ZnUGw" }[span_3](start_span)[span_3](end_span)
-          - { name: "anuragpratap7633", handle: "@anuragpratap7633", id: "UCMMSseLajKweHbkONabSIDw" }[span_4](start_span)[span_4](end_span)
-          - { name: "Apka-aashu", handle: "@Apka-aashu", id: "UCGFi8l9sf5ab4hVJf7byBZg" }[span_5](start_span)[span_5](end_span)
-          - { name: "arhansid786", handle: "@arhansid786", id: "UC1IW16v1OZaVccL5lmc7Qgw" }[span_6](start_span)[span_6](end_span)
-          - { name: "baskarfiroz15", handle: "@baskarfiroz15", id: "UCSuA9LrSsE4-GSaSYDUZhNw" }[span_7](start_span)[span_7](end_span)
-          - { name: "bekalki", handle: "@bekalki", id: "UC-JQRYHht4tLKpiChum6GnA" }[span_8](start_span)[span_8](end_span)
-          - { name: "GauravSingh014", handle: "@GauravSingh014", id: "UC_lzbwXHhYLhwRqgeFcQMVQ" }[span_9](start_span)[span_9](end_span)
-          - { name: "GOREDOXLIVE", handle: "@GOREDOXLIVE", id: "UC8MRu8goXUOM-_YaGsUvsmQ" }[span_10](start_span)[span_10](end_span)
-          - { name: "HarshxTashu", handle: "@HarshxTashu", id: "UCIvzNxn_8Avi35lki-idQHg" }[span_11](start_span)[span_11](end_span)
-          - { name: "lvlyhere", handle: "@lvlyhere", id: "UCtcrRSbMONYVCxf7fnOKeDg" }[span_12](start_span)[span_12](end_span)
-          - { name: "Roshanecho", handle: "@Roshanecho", id: "UCppBiGQ7ct83q8IcLKSF2vQ" }[span_13](start_span)[span_13](end_span)
-          - { name: "rzunscripted08", handle: "@rzunscripted08", id: "UCrM7NqiwJt-vZQSutXbWxlQ" }[span_14](start_span)[span_14](end_span)
-          - { name: "UziiLive", handle: "@UziiLive", id: "UCTAROT2c3_EvJCjP8o9R2Yw" }[span_15](start_span)[span_15](end_span)
-          - { name: "prankurv123", handle: "@prankurv123", id: "UCYe2VVWgjUoEEn9LaLSCk9w" }[span_16](start_span)[span_16](end_span)
-          - { name: "itsanvro", handle: "@itsanvro", id: "UC-fYhYPs1OJNAtE9SjEb5Hw" }[span_17](start_span)[span_17](end_span)
-          - { name: "rishnaaa4u", handle: "@rishnaaa4u", id: "UCsda8YnhZU-aabHGLZcCIfw" }[span_18](start_span)[span_18](end_span)
-          - { name: "akshunislive", handle: "@akshunislive", id: "UCLx8eMopf9uo2K84xg1lD5Q" }[span_19](start_span)[span_19](end_span)
-          - { name: "BagadBillagang", handle: "@BagadBillagang-p6s", id: "UC6_0vYIN2dy3MvBuUSvtZJg" }[span_20](start_span)[span_20](end_span)
-          - { name: "aadarshyadav1", handle: "@aadarshyadav1", id: "UCyUlOENwi_2p_5Hv2fvkQvQ" }[span_21](start_span)[span_21](end_span)
-          - { name: "nihaanbhattagainn", handle: "@nihaanbhattagainn", id: "UC7fUm_Vc21j2Njra8VUHiaA" }[span_22](start_span)[span_22](end_span)
+          - name: "anshhhlive_1"
+            handle: "@anshhhlive_1"
+            id: "UC3NiNPo4kJYnYYhV_6ZnUGw"
+          - name: "anuragpratap7633"
+            handle: "@anuragpratap7633"
+            id: "UCMMSseLajKweHbkONabSIDw"
+          - name: "Apka-aashu"
+            handle: "@Apka-aashu"
+            id: "UCGFi8l9sf5ab4hVJf7byBZg"
+          - name: "arhansid786"
+            handle: "@arhansid786"
+            id: "UC1IW16v1OZaVccL5lmc7Qgw"
+          - name: "baskarfiroz15"
+            handle: "@baskarfiroz15"
+            id: "UCSuA9LrSsE4-GSaSYDUZhNw"
+          - name: "bekalki"
+            handle: "@bekalki"
+            id: "UC-JQRYHht4tLKpiChum6GnA"
+          - name: "GauravSingh014"
+            handle: "@GauravSingh014"
+            id: "UC_lzbwXHhYLhwRqgeFcQMVQ"
+          - name: "GOREDOXLIVE"
+            handle: "@GOREDOXLIVE"
+            id: "UC8MRu8goXUOM-_YaGsUvsmQ"
+          - name: "HarshxTashu"
+            handle: "@HarshxTashu"
+            id: "UCIvzNxn_8Avi35lki-idQHg"
+          - name: "lvlyhere"
+            handle: "@lvlyhere"
+            id: "UCtcrRSbMONYVCxf7fnOKeDg"
+          - name: "Roshanecho"
+            handle: "@Roshanecho"
+            id: "UCppBiGQ7ct83q8IcLKSF2vQ"
+          - name: "rzunscripted08"
+            handle: "@rzunscripted08"
+            id: "UCrM7NqiwJt-vZQSutXbWxlQ"
+          - name: "UziiLive"
+            handle: "@UziiLive"
+            id: "UCTAROT2c3_EvJCjP8o9R2Yw"
+          - name: "prankurv123"
+            handle: "@prankurv123"
+            id: "UCYe2VVWgjUoEEn9LaLSCk9w"
+          - name: "itsanvro"
+            handle: "@itsanvro"
+            id: "UC-fYhYPs1OJNAtE9SjEb5Hw"
+          - name: "rishnaaa4u"
+            handle: "@rishnaaa4u"
+            id: "UCsda8YnhZU-aabHGLZcCIfw"
+          - name: "akshunislive"
+            handle: "@akshunislive"
+            id: "UCLx8eMopf9uo2K84xg1lD5Q"
+          - name: "BagadBillagang"
+            handle: "@BagadBillagang-p6s"
+            id: "UC6_0vYIN2dy3MvBuUSvtZJg"
+          - name: "aadarshyadav1"
+            handle: "@aadarshyadav1"
+            id: "UCyUlOENwi_2p_5Hv2fvkQvQ"
+          - name: "nihaanbhattagainn"
+            handle: "@nihaanbhattagainn"
+            id: "UC7fUm_Vc21j2Njra8VUHiaA"
 
     steps:
       - name: Checkout Code
