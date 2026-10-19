@@ -1,6 +1,6 @@
 """
 YouTube Live Recorder -- Master Production Engine
-Cloud / GitHub Actions & Multi-Environment Edition
+Kaggle & GitHub Actions Multi-Client Edition (With Live Probe Diagnostics)
 """
 
 import atexit
@@ -29,11 +29,11 @@ except Exception:
 
 
 # =============================================================================
-# SETTINGS (Dynamic Environment Support)
+# SETTINGS
 # =============================================================================
 
-CHANNEL_HANDLE = os.getenv("CHANNEL_HANDLE", "@Apka-aashu")
-TARGET_CHANNEL_ID = os.getenv("TARGET_CHANNEL_ID", "UCGFi8l9sf5ab4hVJf7byBZg")
+CHANNEL_HANDLE = os.getenv("CHANNEL_HANDLE", "@anshhhlive_1")
+TARGET_CHANNEL_ID = os.getenv("TARGET_CHANNEL_ID", "UC3NiNPo4kJYnYYhV_6ZnUGw")
 START_AT_IST = os.getenv("START_AT_IST", "")
 HOURS = float(os.getenv("HOURS", "5.5"))
 OUT_DIR = os.getenv("OUT_DIR", "./streams")
@@ -41,7 +41,6 @@ OUT_DIR = os.getenv("OUT_DIR", "./streams")
 USE_COOKIES = os.getenv("USE_COOKIES", "false").lower() == "true"
 COOKIE_FILE = os.getenv("COOKIE_FILE", "")
 
-# Prefer 720p HLS, then any HLS, then 720p non-HLS, then any format.
 FORMAT_SELECTOR = (
     "b[height=720][protocol*=m3u8]"
     "/b[protocol*=m3u8]"
@@ -50,16 +49,14 @@ FORMAT_SELECTOR = (
 )
 SORT_EXPR = "res,fps,br"
 
-# Discovery pacing.
 PRIMARY_RECHECK_SECONDS = 20
 ACTIVE_SESSION_RECHECK_SECONDS = 120
 SECONDARY_WAITING_RECHECK_SECONDS = 90
 SECONDARY_ACTIVE_RECHECK_SECONDS = 120
 
-PROBE_TIMEOUT_SECONDS = 12
-HTML_TIMEOUT_SECONDS = 6
+PROBE_TIMEOUT_SECONDS = 15
+HTML_TIMEOUT_SECONDS = 8
 
-# Recorder timeouts.
 HEARTBEAT_SECONDS = 15
 POLL_INTERVAL_SECONDS = 2
 STALL_SECONDS = 240
@@ -69,15 +66,15 @@ FAILURE_COOLDOWN_SECONDS = 15
 MIN_SAVE_BYTES = 1_000_000
 COPY_BUFFER_BYTES = 8 * 1024 * 1024
 
-# Short exit handling.
 SHORT_EXIT_PROTECTION_SECONDS = 90
 SHORT_EXIT_RETRIES = 2
 SHORT_EXIT_BACKOFF_SECONDS = 4
 STALL_RETRY_BACKOFF_SECONDS = 4
 CLIENT_SWITCH_DELAY_SECONDS = 5
 
-DOWNLOAD_CLIENTS = ["android", None]
-VALIDATION_CLIENTS = ["android", "web_safari"]
+# Cookieless-friendly clients for GitHub Actions + Kaggle
+DOWNLOAD_CLIENTS = ["android", "ios", "tv", None]
+VALIDATION_CLIENTS = ["android", "ios", "tv", "web_safari"]
 
 
 # =============================================================================
@@ -455,7 +452,7 @@ def is_live_candidate(info):
 
 
 # =============================================================================
-# YT-DLP JSON PROBE
+# YT-DLP JSON PROBE (WITH DIAGNOSTIC LOGGING)
 # =============================================================================
 
 def run_ytdlp_json(url, client):
@@ -498,8 +495,15 @@ def run_ytdlp_json(url, client):
                         return item
                 return raw["entries"][0]
             return raw
-    except Exception:
-        pass
+        elif result.stderr:
+            err_text = result.stderr.strip().splitlines()[-1]
+            lowered_err = normalize_message(err_text)
+            if not any(m in lowered_err for m in NOT_LIVE_MARKERS):
+                log(f"probe_diagnostic | client={client_label(client)} | {err_text[:140]}")
+    except subprocess.TimeoutExpired:
+        log(f"probe_diagnostic | client={client_label(client)} | timeout after {PROBE_TIMEOUT_SECONDS}s")
+    except Exception as exc:
+        log(f"probe_diagnostic | client={client_label(client)} | {exc}")
 
     return None
 
@@ -632,11 +636,12 @@ def verify_live_id(video_id, source_kind):
 # =============================================================================
 
 def probe_fast():
-    executor = ThreadPoolExecutor(max_workers=3)
+    executor = ThreadPoolExecutor(max_workers=4)
     futures = {
         executor.submit(fetch_text, CHANNEL_URL): "home",
         executor.submit(run_ytdlp_json, LIVE_URL, "android"): "android_live",
-        executor.submit(run_ytdlp_json, LIVE_URL, "web_safari"): "web_live",
+        executor.submit(run_ytdlp_json, LIVE_URL, "ios"): "ios_live",
+        executor.submit(run_ytdlp_json, LIVE_URL, "tv"): "tv_live",
     }
 
     home_html = ""
@@ -664,7 +669,8 @@ def probe_fast():
 
     for key, client in (
         ("android_live", "android"),
-        ("web_live", "web_safari"),
+        ("ios_live", "ios"),
+        ("tv_live", "tv"),
     ):
         info = live_infos.get(key)
         if not info or not is_live_candidate(info):
@@ -1746,7 +1752,7 @@ log(
     f"id={TARGET_CHANNEL_ID} | "
     f"duration={HOURS}h | "
     "primary=20s waiting / 120s stable-download / 20s recovery | "
-    "download=android->default | "
+    "download=android->ios->tv->default | "
     "stall=240s | "
     "live_from_start=off"
 )
