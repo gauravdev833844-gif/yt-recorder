@@ -1,4 +1,4 @@
-name: Live Stream Recorder
+concurrency: name: Live Stream Recorder
 
 on:
   workflow_dispatch:
