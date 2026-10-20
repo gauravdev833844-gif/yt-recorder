@@ -1,4 +1,4 @@
-name: Live Stream Recorder
+name: Live Recorder
 
 on:
   workflow_dispatch:
@@ -10,103 +10,49 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        streamer:
-          - name: "anshhhlive_1"
-            handle: "@anshhhlive_1"
-            id: "UC3NiNPo4kJYnYYhV_6ZnUGw"
-          - name: "anuragpratap7633"
-            handle: "@anuragpratap7633"
-            id: "UCMMSseLajKweHbkONabSIDw"
-          - name: "Apka-aashu"
-            handle: "@Apka-aashu"
-            id: "UCGFi8l9sf5ab4hVJf7byBZg"
-          - name: "arhansid786"
-            handle: "@arhansid786"
-            id: "UC1IW16v1OZaVccL5lmc7Qgw"
-          - name: "baskarfiroz15"
-            handle: "@baskarfiroz15"
-            id: "UCSuA9LrSsE4-GSaSYDUZhNw"
-          - name: "bekalki"
-            handle: "@bekalki"
-            id: "UC-JQRYHht4tLKpiChum6GnA"
-          - name: "GauravSingh014"
-            handle: "@GauravSingh014"
-            id: "UC_lzbwXHhYLhwRqgeFcQMVQ"
-          - name: "GOREDOXLIVE"
-            handle: "@GOREDOXLIVE"
-            id: "UC8MRu8goXUOM-_YaGsUvsmQ"
-          - name: "HarshxTashu"
-            handle: "@HarshxTashu"
-            id: "UCIvzNxn_8Avi35lki-idQHg"
-          - name: "lvlyhere"
-            handle: "@lvlyhere"
-            id: "UCtcrRSbMONYVCxf7fnOKeDg"
-          - name: "Roshanecho"
-            handle: "@Roshanecho"
-            id: "UCppBiGQ7ct83q8IcLKSF2vQ"
-          - name: "rzunscripted08"
-            handle: "@rzunscripted08"
-            id: "UCrM7NqiwJt-vZQSutXbWxlQ"
-          - name: "UziiLive"
-            handle: "@UziiLive"
-            id: "UCTAROT2c3_EvJCjP8o9R2Yw"
-          - name: "prankurv123"
-            handle: "@prankurv123"
-            id: "UCYe2VVWgjUoEEn9LaLSCk9w"
-          - name: "itsanvro"
-            handle: "@itsanvro"
-            id: "UC-fYhYPs1OJNAtE9SjEb5Hw"
-          - name: "rishnaaa4u"
-            handle: "@rishnaaa4u"
-            id: "UCsda8YnhZU-aabHGLZcCIfw"
-          - name: "akshunislive"
-            handle: "@akshunislive"
-            id: "UCLx8eMopf9uo2K84xg1lD5Q"
-          - name: "BagadBillagang"
-            handle: "@BagadBillagang-p6s"
-            id: "UC6_0vYIN2dy3MvBuUSvtZJg"
-          - name: "aadarshyadav1"
-            handle: "@aadarshyadav1"
-            id: "UCyUlOENwi_2p_5Hv2fvkQvQ"
-          - name: "nihaanbhattagainn"
-            handle: "@nihaanbhattagainn"
-            id: "UC7fUm_Vc21j2Njra8VUHiaA"
+        target:
+          - "@anshhhlive_1|UC3NiNPo4kJYnYYhV_6ZnUGw"
+          - "@anuragpratap7633|UCMMSseLajKweHbkONabSIDw"
+          - "@Apka-aashu|UCGFi8l9sf5ab4hVJf7byBZg"
+          - "@arhansid786|UC1IW16v1OZaVccL5lmc7Qgw"
+          - "@baskarfiroz15|UCSuA9LrSsE4-GSaSYDUZhNw"
+          - "@bekalki|UC-JQRYHht4tLKpiChum6GnA"
+          - "@GauravSingh014|UC_lzbwXHhYLhwRqgeFcQMVQ"
+          - "@GOREDOXLIVE|UC8MRu8goXUOM-_YaGsUvsmQ"
+          - "@HarshxTashu|UCIvzNxn_8Avi35lki-idQHg"
+          - "@lvlyhere|UCtcrRSbMONYVCxf7fnOKeDg"
+          - "@Roshanecho|UCppBiGQ7ct83q8IcLKSF2vQ"
+          - "@rzunscripted08|UCrM7NqiwJt-vZQSutXbWxlQ"
+          - "@UziiLive|UCTAROT2c3_EvJCjP8o9R2Yw"
+          - "@prankurv123|UCYe2VVWgjUoEEn9LaLSCk9w"
+          - "@itsanvro|UC-fYhYPs1OJNAtE9SjEb5Hw"
+          - "@rishnaaa4u|UCsda8YnhZU-aabHGLZcCIfw"
+          - "@akshunislive|UCLx8eMopf9uo2K84xg1lD5Q"
+          - "@BagadBillagang-p6s|UC6_0vYIN2dy3MvBuUSvtZJg"
+          - "@aadarshyadav1|UCyUlOENwi_2p_5Hv2fvkQvQ"
+          - "@nihaanbhattagainn|UC7fUm_Vc21j2Njra8VUHiaA"
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Load Cookies (Optional)
+      - name: Start Recording
         env:
+          TARGET_DATA: ${{ matrix.target }}
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
         run: |
-          if [ -n "$YT_COOKIES" ]; then
-            echo "$YT_COOKIES" > cookies.txt
-          fi
-
-      - name: Run Recorder
-        env:
-          CHANNEL_HANDLE: ${{ matrix.streamer.handle }}
-          TARGET_CHANNEL_ID: ${{ matrix.streamer.id }}
-          HOURS: "5.5"
-          OUT_DIR: "./streams"
-          USE_COOKIES: ${{ secrets.YT_COOKIES != '' && 'true' || 'false' }}
-          COOKIE_FILE: "cookies.txt"
-        run: |
+          echo "$YT_COOKIES" > cookies.txt
+          export CHANNEL_HANDLE=$(echo "$TARGET_DATA" | cut -d'|' -f1)
+          export TARGET_CHANNEL_ID=$(echo "$TARGET_DATA" | cut -d'|' -f2)
+          export USE_COOKIES="true"
+          export COOKIE_FILE="cookies.txt"
+          export HOURS="5.5"
+          export OUT_DIR="./streams"
           python3 recorder.py
-
-      - name: Upload Recorded Video & Logs
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: recording-${{ matrix.streamer.name }}
-          path: |
-            ./streams/*.ts
-            ./streams/*.log
-            ./streams/*.json
+          name: stream-${{ strategy.job-index }}
+          path: ./streams/*
           retention-days: 3
