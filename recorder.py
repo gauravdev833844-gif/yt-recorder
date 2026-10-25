@@ -35,6 +35,13 @@ if not 0 < HOURS <= 5.0:
 OUT_DIR = os.getenv("OUT_DIR", "./streams").strip()
 
 COOKIE_FILE = os.getenv("COOKIE_FILE", "cookies.txt").strip()
+if COOKIE_FILE and os.path.isfile(COOKIE_FILE):
+    try:
+        raw_cookie = open(COOKIE_FILE, "r", encoding="utf-8-sig").read().lstrip("\ufeff")
+        open(COOKIE_FILE, "w", encoding="utf-8", newline="\n").write(raw_cookie)
+    except Exception:
+        pass
+
 USE_COOKIES = (
     os.getenv("USE_COOKIES", "false").lower() == "true"
     and bool(COOKIE_FILE)
