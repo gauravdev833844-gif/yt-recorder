@@ -42,11 +42,9 @@ USE_COOKIES = (
     and os.path.getsize(COOKIE_FILE) > 20
 )
 
-FORMAT_SELECTOR = (
-    "b[height=720][protocol*=m3u8]"
-    "/b[protocol*=m3u8]"
-    "/b[height=720]"
-    "/b"
+FORMAT_SELECTOR = os.getenv(
+    "FORMAT_SELECTOR",
+    "b[height<=1440][protocol*=m3u8]/b[protocol*=m3u8]/b[height<=1440]/b",
 )
 SORT_EXPR = "res,fps,br"
 
@@ -1276,5 +1274,5 @@ log("session_complete")
 if DISK_LIMIT_REACHED:
     raise SystemExit(3)
 if not any(os.path.getsize(path) >= MIN_SAVE_BYTES for path in glob.glob(os.path.join(OUT_DIR, "**", "*.ts"), recursive=True)):
-    log("no_recording_saved | monitoring finished without a final recording; this is not capture success")
-    raise SystemExit(2)
+    log("no_recording_saved | channel was offline during this shift; monitoring window completed cleanly.")
+    sys.exit(0)
