@@ -394,7 +394,8 @@ def run_ytdlp_json(url, client):
             reason = "botcheck" if any(marker in message for marker in BOTCHECK_MARKERS) else (
                 "rate_limited" if any(marker in message for marker in RATE_LIMIT_MARKERS) else (
                 "not_live" if any(marker in message for marker in NOT_LIVE_MARKERS) else "extraction_failed"))
-            log(f"probe_failed | client={client_label(client)} | reason={reason} | exit={result.returncode}")
+            err_snip = " ".join(result.stderr.split())[:180]
+            log(f"probe_failed | client={client_label(client)} | reason={reason} | exit={result.returncode} | err={err_snip}")
     except subprocess.TimeoutExpired:
         log(f"probe_failed | client={client_label(client)} | reason=timeout")
     except Exception as exc:
