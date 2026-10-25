@@ -73,8 +73,8 @@ STALL_RETRY_BACKOFF_SECONDS = 4
 CLIENT_SWITCH_DELAY_SECONDS = 5
 
 # Candidate order; use the probe workflow to validate clients on your runner.
-DOWNLOAD_CLIENTS = ["web_safari", None, "android"]
-VALIDATION_CLIENTS = ["android", "web_safari"]
+DOWNLOAD_CLIENTS = [None, "web", "web_safari"]
+VALIDATION_CLIENTS = [None, "web"]
 
 SESSION_ACTIVE = threading.Event()
 DOWNLOAD_ACTIVE = threading.Event()
@@ -466,7 +466,7 @@ def probe_fast():
     executor = ThreadPoolExecutor(max_workers=3)
     futures = {
         executor.submit(fetch_text, CHANNEL_URL): "home",
-        executor.submit(run_ytdlp_json, LIVE_URL, "android"): "android_live",
+        executor.submit(run_ytdlp_json, LIVE_URL, None): "default_live",
         executor.submit(run_ytdlp_json, LIVE_URL, "web_safari"): "web_live",
     }
     home_html = ""
@@ -488,7 +488,7 @@ def probe_fast():
     finally:
         executor.shutdown(wait=False)
 
-    for key, client in (("android_live", "android"), ("web_live", "web_safari")):
+    for key, client in (("default_live", None), ("web_live", "web_safari")):
         info = live_infos.get(key)
         if not info or not is_live_candidate(info):
             continue
