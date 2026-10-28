@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - "@itstarunk4179|"
+          - "@ChillhopMusic|UCOxqgCwgOqC2lMqC5PYz_Dg"
 
     steps:
       - name: Checkout Repository
