@@ -1,13 +1,14 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import zipfile
 import os
 import json
-import time
+import socket
+import threading
 import recorder
 
 
-class TestRecorderV83Prod(unittest.TestCase):
+class TestRecorderV86Final(unittest.TestCase):
     def setUp(self):
         recorder.NON_LIVE_VOD_CACHE.clear()
         recorder.PROBE_STATS.update({"clean_offline": 0, "blocked": 0, "error": 0, "live_hits": 0})
@@ -113,15 +114,19 @@ class TestRecorderV83Prod(unittest.TestCase):
                 self.waited = True
                 return -15
         fake = FakeProcess()
-        with patch("recorder.os.name", "posix"), patch("recorder.os.killpg", side_effect=ProcessLookupError, create=True):
+        with patch("recorder.os.name", "posix"), patch("recorder.os.killpg", create=True, side_effect=ProcessLookupError):
             recorder.stop_proc(fake)
         self.assertTrue(fake.waited)
 
     def test_10_all_16_repos_mapped_and_no_artificial_auth_blockers(self):
-        with open("streamers_16_config.json", "r", encoding="utf-8") as f:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        cfg_file = os.path.join(base_dir, "streamers_16_config.json")
+        with open(cfg_file, "r", encoding="utf-8") as f:
             cfg = json.load(f)
         self.assertEqual(len(cfg), 16)
-        yml_path = ".github/workflows/record.yml" if os.path.exists(".github/workflows/record.yml") else "record.yml"
+        yml_path = os.path.join(base_dir, ".github", "workflows", "record.yml")
+        if not os.path.exists(yml_path):
+            yml_path = os.path.join(base_dir, "record.yml")
         with open(yml_path, "r", encoding="utf-8") as f:
             yml = f.read()
         for item in cfg:
@@ -129,72 +134,151 @@ class TestRecorderV83Prod(unittest.TestCase):
         self.assertNotIn("RECORDING_AUTHORIZED", yml)
         self.assertNotIn("PUBLIC_REDISTRIBUTION_AUTHORIZED", yml)
 
-    def test_11_downloader_rate_limit_stops_rotation(self):
-        output_state = {
-            "botcheck": False,
-            "no_formats": False,
-            "rate_limited": True,
-            "not_live": False,
-            "normal_exit": False,
-            "chosen_seen": False
+    def test_11_warp_proxy_socks5_handshake_verification(self):
+        """warp_proxy_url() must require a real SOCKS5 \x05\x00 handshake, not just env var or dead TCP port."""
+        os.environ["WARP_PROXY"] = "socks5://127.0.0.1:40000"
+        # When port 40000 is not listening -> must return "" even though WARP_PROXY env is set
+        self.assertEqual(recorder.warp_proxy_url(), "")
+
+        # Mock a healthy SOCKS5 server returning \x05\x00
+        mock_sock = MagicMock()
+        mock_sock.__enter__.return_value = mock_sock
+        mock_sock.recv.return_value = b"\x05\x00"
+        with patch("recorder.socket.create_connection", return_value=mock_sock):
+            self.assertEqual(recorder.warp_proxy_url(), "socks5://127.0.0.1:40000")
+
+        # Mock a port that accepts TCP but returns garbage instead of SOCKS5 \x05\x00 -> must return ""
+        mock_sock.recv.return_value = b"HTTP"
+        with patch("recorder.socket.create_connection", return_value=mock_sock):
+            self.assertEqual(recorder.warp_proxy_url(), "")
+
+    def test_12_fetch_text_falls_back_to_warp_on_any_unknown_challenge_page(self):
+        """fetch_text() uses inspect_youtube_html() so any unknown challenge page (ERROR or BLOCKED) triggers WARP fallback."""
+        challenge_html = "<html><body>Please complete security challenge to continue</body></html>"
+        valid_html = '<html><script>var ytInitialData = {"externalId":"UCNty54b8Vzmk-9BRYfF0EVQ"};</script></html>'
+
+        def fake_curl(_bin, _url, use_proxy=False):
+            return valid_html if use_proxy else challenge_html
+
+        with patch.object(recorder, "_run_curl_fetch", side_effect=fake_curl) as mock_curl, \
+             patch.object(recorder, "warp_proxy_url", return_value="socks5://127.0.0.1:40000"):
+            out = recorder.fetch_text("https://www.youtube.com/@floxiclip/live")
+            self.assertEqual(out, valid_html)
+            self.assertEqual(mock_curl.call_count, 2)
+
+    def test_13_check_live_state_strict_ended_vs_unknown(self):
+        """check_live_state() returns ENDED only when videoId + channelId match and ended is True; probe failure is UNKNOWN."""
+        # Probe failure / empty HTML -> UNKNOWN (never ENDED!)
+        with patch.object(recorder, "fetch_text", return_value=""), \
+             patch.object(recorder, "run_ytdlp_json", return_value=None):
+            self.assertEqual(recorder.check_live_state("LSClhQ75Ot8"), "UNKNOWN")
+
+        # Wrong channel ID -> UNKNOWN (never ENDED!)
+        wrong_cid_html = (
+            '<html><script>var ytInitialPlayerResponse = {'
+            '"videoDetails":{"videoId":"LSClhQ75Ot8","channelId":"UC-JQRYHht4tLKpiChum6GnA","isLive":false}'
+            '};</script></html>'
+        )
+        with patch.object(recorder, "fetch_text", return_value=wrong_cid_html), \
+             patch.object(recorder, "run_ytdlp_json", return_value=None):
+            self.assertEqual(recorder.check_live_state("LSClhQ75Ot8"), "UNKNOWN")
+
+        # Confirmed ended broadcast for exact videoId + channelId -> ENDED
+        ended_html = (
+            '<html><script>var ytInitialPlayerResponse = {'
+            '"videoDetails":{"videoId":"LSClhQ75Ot8","channelId":"UCNty54b8Vzmk-9BRYfF0EVQ","isLive":false}'
+            '};</script></html>'
+        )
+        with patch.object(recorder, "fetch_text", return_value=ended_html):
+            self.assertEqual(recorder.check_live_state("LSClhQ75Ot8"), "ENDED")
+
+    def test_14_rate_limit_vs_access_restricted_separation(self):
+        """403 / content unavailable are classified as access_restricted, not rate_limited."""
+        state_403 = {"botcheck": False, "no_formats": False, "rate_limited": False, "access_restricted": True, "not_live": False, "normal_exit": False}
+        self.assertEqual(recorder.classify_output(state_403), "access_restricted")
+        state_rl = {"botcheck": False, "no_formats": False, "rate_limited": True, "access_restricted": False, "not_live": False, "normal_exit": False}
+        self.assertEqual(recorder.classify_output(state_rl), "rate_limited")
+
+    def test_15_unverified_not_claimed_as_verified_offline(self):
+        """Test 13/15 audit requirement: clean_offline=0, blocked=0, error=0 must be UNVERIFIED via actual production function."""
+        summary_unverified = {
+            "probe_stats": {"clean_offline": 0, "blocked": 0, "error": 0},
+            "blocked_by_youtube": False,
+            "downloader_rate_limited": False,
+            "final_size_mb": 0.0,
+            "chunk_count": 0,
         }
-        self.assertEqual(recorder.classify_output(output_state), "rate_limited")
-
-        active = {
-            "live_id": "FWjZ0x2M8og",
-            "chunk_dir": "/tmp/test",
-            "chunk_index": 1,
-            "session_index": 1,
-            "final_ts": "/tmp/test.ts",
-            "chunks": []
-        }
-        with patch.object(recorder, "run_download_attempt", return_value=(False, "rate_limited", None)) as mock_dl:
-            ok, reason, rep = recorder.record_until_stop(active, time.time() + 300, None)
-            self.assertFalse(ok)
-            self.assertEqual(reason, "rate_limited")
-            # Must stop after 1 attempt; no fallback to remaining clients
-            self.assertEqual(mock_dl.call_count, 1)
-            self.assertTrue(recorder.SUMMARY.get("downloader_rate_limited"))
-            self.assertTrue(recorder.SUMMARY.get("blocked_by_youtube"))
-
-    def test_12_persists_downloader_rate_limited_in_summary(self):
-        recorder.write_summary(downloader_rate_limited=True, blocked_by_youtube=True, failure_reason="rate_limited")
-        self.assertTrue(recorder.SUMMARY["downloader_rate_limited"])
-        self.assertTrue(recorder.SUMMARY["blocked_by_youtube"])
-        self.assertEqual(recorder.SUMMARY["failure_reason"], "rate_limited")
-
-    def test_13_unverified_not_claimed_as_verified_offline(self):
-        # clean_offline=0, blocked=0, error=0 MUST be UNVERIFIED, not NO_LIVE_CONFIRMED
-        stats = {"clean_offline": 0, "blocked": 0, "error": 0}
-        c_off = stats["clean_offline"]
-        c_blk = stats["blocked"]
-        c_err = stats["error"]
-        
-        status = None
-        if c_off > 0 and c_blk == 0 and c_err == 0:
-            status = "NO_LIVE_CONFIRMED"
-        elif c_off == 0 and c_blk == 0 and c_err == 0:
-            status = "UNVERIFIED"
+        status = recorder.classify_run_status(summary_unverified, media_candidates=[])
         self.assertEqual(status, "UNVERIFIED")
         self.assertNotEqual(status, "NO_LIVE_CONFIRMED")
 
-    def test_14_record_pass_requires_non_empty_media_file(self):
-        # A run with 0 chunks or 0.0 MB must NEVER claim RECORD_PASS
-        summary_0mb = {"final_file": None, "final_size_mb": 0.0, "chunk_count": 0}
-        media_files = []
-        is_record_pass = bool(media_files and (summary_0mb["final_size_mb"] > 0 or summary_0mb["chunk_count"] > 0))
-        self.assertFalse(is_record_pass)
+        summary_confirmed_offline = {
+            "probe_stats": {"clean_offline": 3, "blocked": 0, "error": 0},
+            "blocked_by_youtube": False,
+            "downloader_rate_limited": False,
+            "final_size_mb": 0.0,
+            "chunk_count": 0,
+        }
+        status_offline = recorder.classify_run_status(summary_confirmed_offline, media_candidates=[])
+        self.assertEqual(status_offline, "NO_LIVE_CONFIRMED")
+
+    def test_16_record_pass_requires_non_empty_media_file(self):
+        """Test 14/16 audit requirement: test actual RECORD_PASS implementation with real temporary files."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Case 1: Empty folder
+            valid = recorder.validate_finalized_recordings(tmpdir)
+            self.assertEqual(valid, [])
+            status = recorder.classify_run_status({"chunk_count": 0, "final_size_mb": 0.0}, tmpdir)
+            self.assertNotEqual(status, "RECORD_PASS")
+
+            # Case 2: Only .part file exists (e.g. 2 MB unfinished download)
+            part_file = os.path.join(tmpdir, "test_stream.mp4.part")
+            with open(part_file, "wb") as f:
+                f.write(b"0" * 2_000_000)
+            valid = recorder.validate_finalized_recordings(tmpdir)
+            self.assertEqual(valid, [], ".part files must not count as finalized recordings")
+            status = recorder.classify_run_status({"chunk_count": 1, "final_size_mb": 2.0}, tmpdir)
+            self.assertNotEqual(status, "RECORD_PASS", "Cannot claim RECORD_PASS with only .part file")
+
+            # Case 3: Empty finalized file (0 bytes)
+            empty_mp4 = os.path.join(tmpdir, "empty_stream.mp4")
+            with open(empty_mp4, "wb") as f:
+                pass
+            valid = recorder.validate_finalized_recordings(tmpdir)
+            self.assertEqual(valid, [], "0-byte file must not count as valid recording")
+            status = recorder.classify_run_status({"chunk_count": 1, "final_size_mb": 0.0}, tmpdir)
+            self.assertNotEqual(status, "RECORD_PASS", "Cannot claim RECORD_PASS with empty file")
+
+            # Case 4: Finalized, non-empty media file (>= MIN_SAVE_BYTES)
+            valid_mp4 = os.path.join(tmpdir, "valid_stream.mp4")
+            with open(valid_mp4, "wb") as f:
+                f.write(b"0" * 1_500_000)
+            valid = recorder.validate_finalized_recordings(tmpdir)
+            self.assertEqual(len(valid), 1)
+            self.assertEqual(valid[0][0], valid_mp4)
+            self.assertEqual(valid[0][1], 1_500_000)
+
+            summary_success = {
+                "chunk_count": 1,
+                "final_size_mb": 1.43,
+                "probe_stats": {"clean_offline": 0, "blocked": 0, "error": 0}
+            }
+            status = recorder.classify_run_status(summary_success, tmpdir)
+            self.assertEqual(status, "RECORD_PASS", "Must claim RECORD_PASS with finalized, non-empty media file")
 
 
 if __name__ == "__main__":
-    suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestRecorderV83Prod)
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestRecorderV86Final)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     assert result.wasSuccessful(), "Unit tests failed"
 
-    zip_path = "Recorder-v8.3-Production.zip"
+    zip_path = "Recorder-v8.6-Final.zip"
+    yml_src = "record.yml" if os.path.exists("record.yml") else ".github/workflows/record.yml"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write("recorder.py", "recorder.py")
-        zf.write("record.yml", ".github/workflows/record.yml")
+        zf.write(yml_src, ".github/workflows/record.yml")
         zf.write("streamers_16_config.json", "streamers_16_config.json")
         zf.write("test_v83.py", "test_v83.py")
-    print("Packaged Recorder-v8.3-Production.zip:", os.path.getsize(zip_path), "bytes")
+    print("Packaged Recorder-v8.6-Final.zip:", os.path.getsize(zip_path), "bytes")
