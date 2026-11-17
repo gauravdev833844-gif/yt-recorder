@@ -77,7 +77,7 @@ jobs:
           MAX_RUNTIME_SECONDS: ${{ github.event.inputs.runtime_seconds || '14400' }}
           COOKIES_FILE: cookies.txt
         run: |
-          python -u recorder_Realzeal.official.py
+          python -u recorder.py
 
       - name: Consolidate Recorded Streams
         if: always()
@@ -116,7 +116,7 @@ jobs:
           REMAINING=$(( SHIFTS_LEFT - 1 ))
           if [ "$REMAINING" -ge 0 ] && [ "$ALWAYS_CONTINUE" == "true" ]; then
             echo "Chaining next shift for Roshan (${REMAINING} shifts left)..."
-            gh workflow run record_Realzeal.official.yml \
+            gh workflow run record.yml \
               --repo "$GITHUB_REPOSITORY" \
               --ref "$GITHUB_REF_NAME" \
               -f channel="$CHANNEL" \
