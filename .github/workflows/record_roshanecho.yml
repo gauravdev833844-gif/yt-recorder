@@ -1,0 +1,129 @@
+name: Record @Realzeal.official YouTube Live
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Target YouTube Channel or Video URL'
+        required: true
+        default: '@Realzeal.official'
+      runtime_seconds:
+        description: 'Shift Duration in Seconds (Default: 14400 = 4h)'
+        required: false
+        default: '14400'
+      shifts_left:
+        description: 'Continuation shifts after this one (default 2 = 3 shifts total / ~12.5h)'
+        required: false
+        default: '2'
+      always_continue:
+        description: 'true = automatically trigger next shift when current shift ends'
+        required: false
+        default: 'true'
+  schedule:
+    # 24/7 background cron safety net every 4 hours
+    - cron: '0 */4 * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install System Tools & FFmpeg
+        run: |
+          printf 'Acquire::ForceIPv4 "true";\nAcquire::http::Timeout "10";\nAcquire::https::Timeout "10";\nAcquire::Retries "2";\n' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 > /dev/null
+          MISSING_PKGS=""
+          command -v ffmpeg >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS ffmpeg"
+          command -v jq >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS jq"
+          command -v curl >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS curl"
+          if [ -n "$MISSING_PKGS" ]; then
+            CODENAME=$(lsb_release -cs 2>/dev/null || echo "noble")
+            for m in "https://mirrors.edge.kernel.org/ubuntu/" "http://us.archive.ubuntu.com/ubuntu/" "http://archive.ubuntu.com/ubuntu/"; do
+              if curl -sfI --max-time 4 "${m}dists/${CODENAME}/Release" >/dev/null 2>&1; then
+                sudo sed -i "s|http://azure.archive.ubuntu.com/ubuntu/|$m|g; s|http://azure.archive.ubuntu.com/ubuntu|$m|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/apt-mirrors.txt 2>/dev/null || true
+                break
+              fi
+            done
+            sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $MISSING_PKGS
+          fi
+          pip install -U yt-dlp
+
+      - name: Deploy Membership Authentication Cookies
+        run: |
+          echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
+          # Verify cookie file is populated
+          if [ -s cookies.txt ]; then
+            echo "[AUTH] cookies.txt successfully injected ($(wc -l < cookies.txt) lines)."
+          else
+            echo "[AUTH WARNING] YOUTUBE_COOKIES secret appears empty or missing!"
+          fi
+
+      - name: Run Autonomous YouTube Stream Watcher & Recorder
+        env:
+          TARGET_CHANNEL: ${{ github.event.inputs.channel || '@Realzeal.official' }}
+          MAX_RUNTIME_SECONDS: ${{ github.event.inputs.runtime_seconds || '14400' }}
+          COOKIES_FILE: cookies.txt
+        run: |
+          python -u recorder_Realzeal.official.py
+
+      - name: Consolidate Recorded Streams
+        if: always()
+        run: |
+          mkdir -p final_recordings
+          find downloads/ -type f -name "*.mkv" -exec cp -v {} final_recordings/ \; || true
+          find downloads/ -type f -name "*.mp4" -exec cp -v {} final_recordings/ \; || true
+          ls -lh final_recordings/ || true
+
+      - name: Upload to Gofile Relay
+        if: always()
+        run: |
+          python -u upload_relay.py
+
+      - name: Upload GitHub Actions Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Realzeal.official-recording-${{ github.run_id }}
+          path: |
+            final_recordings/*.mkv
+            final_recordings/*.mp4
+            downloads/**/*.mkv
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Dispatch Next Continuation Shift
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHIFTS_LEFT: ${{ github.event.inputs.shifts_left || '2' }}
+          ALWAYS_CONTINUE: ${{ github.event.inputs.always_continue || 'true' }}
+          RUNTIME_SECONDS: ${{ github.event.inputs.runtime_seconds || '14400' }}
+          CHANNEL: ${{ github.event.inputs.channel || '@Realzeal.official' }}
+        run: |
+          REMAINING=$(( SHIFTS_LEFT - 1 ))
+          if [ "$REMAINING" -ge 0 ] && [ "$ALWAYS_CONTINUE" == "true" ]; then
+            echo "Chaining next shift for Roshan (${REMAINING} shifts left)..."
+            gh workflow run record_Realzeal.official.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              --ref "$GITHUB_REF_NAME" \
+              -f channel="$CHANNEL" \
+              -f runtime_seconds="$RUNTIME_SECONDS" \
+              -f shifts_left="$REMAINING" \
+              -f always_continue="true"
+            echo "Next continuation shift for Roshan dispatched successfully!"
+          else
+            echo "No more shifts remaining or continuation disabled."
+          fi

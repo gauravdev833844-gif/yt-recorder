@@ -1,8 +1,23 @@
-
+# Sensitive Authentication
 cookies.txt
-*cookies*.txt
-.env
-.env.*
-streams/
-upload-report.json
+*.cookie
+*.cookies
+
+# Recorded Media & Temporary Fragments
+downloads/
+final_recordings/
+recovery_pieces/
+*.mkv
+*.mp4
+*.ts
+*.part
+*.ytdl
+*.tmp
+*.frag
+
+# Python Caches
 __pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
