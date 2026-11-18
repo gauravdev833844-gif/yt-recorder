@@ -1,0 +1,32 @@
+name: Telegram to Gofile & GDrive
+
+on:
+  workflow_dispatch:
+    inputs:
+      tg_link:
+        description: 'Telegram Private Link'
+        required: true
+        default: 'https://t.me/c/4429882693/597'
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y rclone curl jq
+          pip install telethon cryptg
+      - name: Setup Rclone Config
+        env:
+          RCLONE_CONFIG_DATA: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          mkdir -p ~/.config/rclone
+          if [ -n "$RCLONE_CONFIG_DATA" ]; then
+            printf "%s\n" "$RCLONE_CONFIG_DATA" > ~/.config/rclone/rclone.conf
+          fi
+      - name: Download from Telegram & Upload to Cloud
+        env:
+          TG_SESSION: ${{ secrets.TG_SESSION }}
+          TG_LINK: ${{ github.event.inputs.tg_link }}
+        run: python -u tg_to_cloud.py
