@@ -74,9 +74,10 @@ def main() -> None:
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     cookies_path = get_cookies_path()
-    if not cookies_path:
-        core.log("WARNING: cookies.txt was not found beside this script or in current directory.")
-        core.log("Members-only probing and private/unlisted live streams will not be detected without cookies.")
+    if not core.is_valid_cookie_file(cookies_path):
+        core.log("WARNING: cookies.txt is empty, missing, or lacks valid credentials.")
+        core.log("Public-to-Members recovery mode active (high-frequency probe + direct HLS manifest lock).")
+        cookies_path = None
     else:
         core.log(f"Authentication cookies loaded: {cookies_path}")
 

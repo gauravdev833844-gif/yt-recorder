@@ -26,13 +26,26 @@ MIN_CHUNK_BYTES = 256 * 1024
 
 STARTUP_WINDOW_SECONDS = 60
 STARTUP_POLL_SECONDS = 5
-NORMAL_POLL_SECONDS = 20
+NORMAL_POLL_SECONDS = 5
 OFFLINE_GRACE_SECONDS = 180
 BOOT_MONO = time.monotonic()
 
 
 def log(message: str) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def is_valid_cookie_file(cookies: Optional[str]) -> bool:
+    if not cookies or not os.path.isfile(cookies):
+        return False
+    try:
+        if os.path.getsize(cookies) < 50:
+            return False
+        with open(cookies, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+            return "youtube.com" in content or ".google.com" in content
+    except Exception:
+        return False
 
 
 def get_ytdlp_command() -> list:
@@ -104,7 +117,7 @@ def build_channel_url(value: str) -> str:
 def _fetch_html(url: str, cookies: Optional[str]) -> str:
     try:
         handlers = []
-        if cookies and os.path.isfile(cookies):
+        if is_valid_cookie_file(cookies):
             jar = http.cookiejar.MozillaCookieJar(cookies)
             jar.load(ignore_discard=True, ignore_expires=True)
             handlers.append(urllib.request.HTTPCookieProcessor(jar))
@@ -116,7 +129,7 @@ def _fetch_html(url: str, cookies: Optional[str]) -> str:
                 "Accept-Language": "en-US,en;q=0.9",
             },
         )
-        with opener.open(request, timeout=15) as response:
+        with opener.open(request, timeout=12) as response:
             return response.read().decode("utf-8", errors="ignore")
     except Exception:
         return ""
@@ -161,20 +174,21 @@ def _extract_live_ids_from_html(html: str) -> list[str]:
 
 def _verify_video_live(video_id: str, cookies: Optional[str]) -> bool:
     watch_url = f"https://www.youtube.com/watch?v={video_id}"
-    html = _fetch_html(watch_url, cookies)
+    valid_cookies = cookies if is_valid_cookie_file(cookies) else None
+    html = _fetch_html(watch_url, valid_cookies)
     if video_id in _extract_live_ids_from_html(html):
         return True
-    for client in ("mweb", "tv", "android"):
+    for client in ("mweb", "tv", "android", "ios", "web_safari"):
         cmd = get_ytdlp_command() + [
             "--simulate", "--no-warnings", "--ignore-no-formats-error",
             "--extractor-args", f"youtube:player_client={client}",
             "--print", "%(is_live)s|||%(live_status)s",
         ] + js_args()
-        if cookies and client != "android":
-            cmd += ["--cookies", cookies]
+        if valid_cookies and client != "android":
+            cmd += ["--cookies", valid_cookies]
         cmd.append(watch_url)
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
             out = (res.stdout or "").strip().lower()
             if "true|||" in out or "|||is_live" in out:
                 return True
@@ -188,13 +202,32 @@ def _verify_video_live(video_id: str, cookies: Optional[str]) -> bool:
 def probe_live(channel_live_url: str, cookies: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     channel_url = channel_live_url.rsplit("/live", 1)[0]
     streams_url = f"{channel_url}/streams"
+    valid_cookies = cookies if is_valid_cookie_file(cookies) else None
 
+    # 1. Fast HTML extraction
     for page_url in (channel_live_url, streams_url, channel_url):
-        html = _fetch_html(page_url, cookies)
+        html = _fetch_html(page_url, valid_cookies)
         for cand_id in _extract_live_ids_from_html(html)[:3]:
-            if page_url == channel_live_url or _verify_video_live(cand_id, cookies):
+            if page_url == channel_live_url or _verify_video_live(cand_id, valid_cookies):
                 return cand_id, None
 
+    # 2. YouTube RSS Feed probe (Zero botcheck / CAPTCHA on Azure datacenter IPs)
+    canonical_id = "UCDxTnyiBjk-SI3ySaGjw9wA" if "realzeal" in channel_live_url.lower() else ""
+    if not canonical_id and "channel/" in channel_url:
+        canonical_id = channel_url.split("channel/")[-1].split("/")[0]
+    if canonical_id:
+        try:
+            rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={canonical_id}"
+            req = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                xml_data = r.read().decode("utf-8", errors="ignore")
+                for vid in re.findall(r'<yt:videoId>([A-Za-z0-9_-]{11})</yt:videoId>', xml_data)[:2]:
+                    if _verify_video_live(vid, valid_cookies):
+                        return vid, None
+        except Exception:
+            pass
+
+    # 3. InnerTube multi-client yt-dlp probe
     for target in (channel_live_url, streams_url):
         command = get_ytdlp_command() + [
             "--simulate", "--no-warnings", "--ignore-no-formats-error",
@@ -202,11 +235,11 @@ def probe_live(channel_live_url: str, cookies: Optional[str] = None) -> Tuple[Op
             "--playlist-items", "1:4" if target == streams_url else "1",
             "--print", "%(id)s|||%(is_live)s|||%(live_status)s",
         ] + js_args()
-        if cookies:
-            command += ["--cookies", cookies]
+        if valid_cookies:
+            command += ["--cookies", valid_cookies]
         command.append(target)
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(command, capture_output=True, text=True, timeout=20)
             for line in (result.stdout or "").splitlines():
                 if "|||" not in line:
                     continue
@@ -234,21 +267,45 @@ def run_live_download(url: str, out_dir: str, chunk_index: int, cookies: Optiona
                       live_from_start: bool = False) -> Tuple[Optional[str], bool]:
     os.makedirs(out_dir, exist_ok=True)
     interrupted = False
+    valid_cookies = cookies if is_valid_cookie_file(cookies) else None
+
+    # Step 1: Pre-resolve direct HLS CDN manifest URL (The Brave Browser Trick)
+    # Even if creator switches to Members-Only mid-stream, the pre-signed HLS manifest
+    # remains valid on Google's CDN for 6-12 hours without requiring membership verification!
+    manifest_url = None
+    try:
+        manifest_cmd = get_ytdlp_command() + [
+            "-g", "-f", BEST_FORMAT,
+            "--no-warnings", "--ignore-no-formats-error",
+        ] + js_args()
+        if valid_cookies:
+            manifest_cmd += ["--cookies", valid_cookies]
+        manifest_cmd.append(url)
+        res = subprocess.run(manifest_cmd, capture_output=True, text=True, timeout=25)
+        for line in (res.stdout or "").splitlines():
+            line = line.strip()
+            if "googlevideo.com" in line and ("m3u8" in line or "manifest" in line or line.startswith("http")):
+                manifest_url = line
+                log("[TRICK] Pre-signed HLS manifest extracted successfully.")
+                break
+    except Exception as e:
+        log(f"[TRICK] Manifest extraction note: {e}")
+
+    output_template = os.path.join(out_dir, f"chunk_{chunk_index:03d}_%(id)s.ts")
+    ffmpeg_i_args = (
+        "ffmpeg_i:-reconnect 1 -reconnect_streamed 1 "
+        "-reconnect_on_network_error 1 -reconnect_on_http_error 4xx,5xx "
+        "-reconnect_delay_max 10 -rw_timeout 15000000"
+    )
 
     for client in ("mweb", "tv", "web_safari", "android", None):
         rem = _remaining_shift_seconds()
         if rem is not None and rem <= 15:
             break
 
-        output_template = os.path.join(out_dir, f"chunk_{chunk_index:03d}_%(id)s.ts")
-        ffmpeg_i_args = (
-            "ffmpeg_i:-reconnect 1 -reconnect_streamed 1 "
-            "-reconnect_on_network_error 1 -reconnect_on_http_error 4xx,5xx "
-            "-reconnect_delay_max 10 -rw_timeout 15000000"
-        )
         command = get_ytdlp_command() + [
             "--newline", "--no-warnings", "--no-part", "--continue",
-            "--retries", "20", "--fragment-retries", "infinite",
+            "--retries", "infinite", "--fragment-retries", "infinite",
             "--retry-sleep", "http:2", "--retry-sleep", "fragment:1",
             "--socket-timeout", "20",
             "--hls-use-mpegts", "--downloader", "m3u8:ffmpeg",
@@ -262,8 +319,8 @@ def run_live_download(url: str, out_dir: str, chunk_index: int, cookies: Optiona
         ffmpeg_path = get_ffmpeg_path()
         if ffmpeg_path:
             command += ["--ffmpeg-location", os.path.dirname(ffmpeg_path)]
-        if cookies and client != "android":
-            command += ["--cookies", cookies]
+        if valid_cookies and client != "android":
+            command += ["--cookies", valid_cookies]
         command.append(url)
 
         log(f"recording chunk {chunk_index:03d} (client={client or 'default'}, timeout={rem or 'none'}s)...")
@@ -312,6 +369,40 @@ def run_live_download(url: str, out_dir: str, chunk_index: int, cookies: Optiona
             return produced, interrupted
         if interrupted:
             break
+
+        # Fallback: Direct FFmpeg CDN Ingestion using pre-signed manifest URL (Brave Trick)
+        if manifest_url and get_ffmpeg_path():
+            log("[TRICK] Standard extractor dropped; activating direct FFmpeg CDN ingestion on pre-signed manifest...")
+            direct_output = os.path.join(out_dir, f"chunk_{chunk_index:03d}_hls_direct.ts")
+            direct_ffmpeg_cmd = [
+                get_ffmpeg_path(),
+                "-y",
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_on_network_error", "1",
+                "-reconnect_on_http_error", "4xx,5xx",
+                "-reconnect_delay_max", "5",
+                "-rw_timeout", "15000000",
+                "-i", manifest_url,
+                "-c", "copy",
+                direct_output,
+            ]
+            fproc = subprocess.Popen(direct_ffmpeg_cmd, start_new_session=(os.name != "nt"))
+            try:
+                while fproc.poll() is None:
+                    time.sleep(2)
+                    rem_now = _remaining_shift_seconds()
+                    if rem_now is not None and rem_now <= 15:
+                        fproc.terminate()
+                        fproc.wait(timeout=10)
+                        break
+            except KeyboardInterrupt:
+                interrupted = True
+                fproc.terminate()
+                fproc.wait(timeout=10)
+            if os.path.isfile(direct_output) and os.path.getsize(direct_output) >= MIN_CHUNK_BYTES:
+                return direct_output, interrupted
+
         if time.monotonic() - started < 15:
             log(f"client {client or 'default'} failed quickly; trying next client...")
             continue
@@ -337,7 +428,7 @@ def run_recording_session(get_live_id, url_builder, out_dir: str, cookies: Optio
     watch_started = time.monotonic()
     last_heartbeat = watch_started
     probe_count = 0
-    log("Watching for live: checking every 5 seconds for the first minute, then every 20 seconds.")
+    log("Watching for live: high-frequency 5-second polling active for instant public window lock.")
 
     stopped_by_user = False
     try:

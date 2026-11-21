@@ -41,10 +41,11 @@ def upload_to_gofile(file_path: str) -> str:
                     file_data = f.read()
 
                 filename = os.path.basename(file_path)
+                content_type = "video/mp2t" if filename.endswith(".ts") else ("video/mp4" if filename.endswith(".mp4") else "video/x-matroska")
                 body = bytearray()
                 body.extend(f"--{boundary}\r\n".encode("utf-8"))
                 body.extend(f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode("utf-8"))
-                body.extend(b"Content-Type: video/x-matroska\r\n\r\n")
+                body.extend(f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"))
                 body.extend(file_data)
                 body.extend(f"\r\n--{boundary}--\r\n".encode("utf-8"))
 
@@ -82,7 +83,7 @@ def main():
     found_videos = []
     for d in search_dirs:
         if os.path.isdir(d):
-            for ext in ("*.mkv", "*.mp4"):
+            for ext in ("*.mkv", "*.mp4", "*.ts"):
                 found_videos.extend(glob.glob(os.path.join(d, ext)))
 
     # Filter out empty files or small fragments < 1MB
